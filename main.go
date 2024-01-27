@@ -1,15 +1,22 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"zeni/internal/database"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
+
+type apiConfig struct {
+	DB *database.Queries
+}
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
 	if code > 499 {
@@ -33,6 +40,20 @@ func main() {
 		log.Fatal("PORT not found")
 	}
 
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Fatal("DB_URL not found")
+	}
+
+	conn, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal("Can't connect to Databse:", err)
+	}
+
+	apiCfg := apiConfig{
+		DB: database.New(conn),
+	}
+
 	router := chi.NewRouter()
 
 	router.Use(cors.Handler(cors.Options{
@@ -48,6 +69,8 @@ func main() {
 
 	v1Router.Get("/ready", handler)
 	v1Router.Get("/err", handlerErr)
+	v1Router.Post("/users", apiCfg.handlerUser)
+	v1Router.Get("/users", apiCfg.GetUser)
 	router.Mount("/v1", v1Router)
 
 	serv := &http.Server{
@@ -56,7 +79,7 @@ func main() {
 	}
 
 	log.Println("Server running on port", portString)
-	err := serv.ListenAndServe()
+	err = serv.ListenAndServe()
 	if err != nil {
 		log.Fatal(err)
 	}
