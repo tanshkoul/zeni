@@ -2,10 +2,10 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 	"zeni/internal/database"
 
 	"github.com/go-chi/chi"
@@ -31,8 +31,6 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 }
 
 func main() {
-	fmt.Println("Hello, World!")
-
 	godotenv.Load(".env")
 
 	portString := os.Getenv("PORT")
@@ -50,9 +48,12 @@ func main() {
 		log.Fatal("Can't connect to Databse:", err)
 	}
 
+	db := database.New(conn)
 	apiCfg := apiConfig{
 		DB: database.New(conn),
 	}
+
+	go startScarping(db, 10, time.Minute)
 
 	router := chi.NewRouter()
 
@@ -70,7 +71,13 @@ func main() {
 	v1Router.Get("/ready", handler)
 	v1Router.Get("/err", handlerErr)
 	v1Router.Post("/users", apiCfg.handlerUser)
-	v1Router.Get("/users", apiCfg.GetUser)
+	v1Router.Get("/users", apiCfg.authMiddleware(apiCfg.GetUser))
+	v1Router.Post("/feeds", apiCfg.authMiddleware(apiCfg.handlerCreateFeed))
+	v1Router.Get("/feeds", apiCfg.handlerGetFeeds)
+	v1Router.Post("/feed_follows", apiCfg.authMiddleware(apiCfg.handlerCreateFeedFollow))
+	v1Router.Get("/feed_follows", apiCfg.authMiddleware(apiCfg.handlerGetFeedFollows))
+	v1Router.Delete("/feed_follows/{feedFollowID}", apiCfg.authMiddleware(apiCfg.handlerDeleteFeedFollow))
+	v1Router.Get("/posts", apiCfg.authMiddleware(apiCfg.handlerGetPostsForUser))
 	router.Mount("/v1", v1Router)
 
 	serv := &http.Server{
